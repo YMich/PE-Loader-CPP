@@ -1,0 +1,37 @@
+# Build folders
+build/
+bin/
+obj/
+out/
+Debug/
+Release/
+x64/
+x86/
+
+# Compiled files
+*.o
+*.obj
+*.exe
+*.out
+*.dll
+*.so
+*.a
+*.lib
+*.pdb
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.vcxproj.user
+*.suo
+
+# Temporary files
+*.log
+*.tmp
