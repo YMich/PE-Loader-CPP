@@ -8,6 +8,7 @@ BOOL isValidDosHeader(PCHAR buff);
 BOOL isValidNtHeader(PCHAR buff);
 PCHAR getFile(char* argv[]);
 DWORD getSizeOfImage(PCHAR buff); 
+PCHAR allocVirtualMem(PCHAR tmpBuff);
 
 int main(int argc, char* argv[]) {
     if (argc != 2){
@@ -16,12 +17,32 @@ int main(int argc, char* argv[]) {
     }
 
     PCHAR tmpBuff = getFile(argv);
+
     if (!isValidDosHeader(tmpBuff) || !isValidNtHeader(tmpBuff)){
         HeapFree(GetProcessHeap(), 0, (LPVOID)tmpBuff);
         exit(1);
     }
 
+    PCHAR pImageBase = allocVirtualMem(tmpBuff);
+
+    // TODO: Section Mapping
+
+    VirtualFree(pImageBase, 0, MEM_RELEASE);
+    HeapFree(GetProcessHeap(), 0, (LPVOID)tmpBuff);
+    
+    return 0;
+}
+
+/**
+ * @brief Allocates the final virtual memory space required for the PE image to execute.
+ * It parses the Optional Header to find the SizeOfImage and requests executable memory from the OS.
+ * @param tmpBuff Pointer to the raw PE file data (used to extract SizeOfImage).
+ * @return PCHAR A pointer to the newly allocated executable memory (ImageBase). 
+ * The caller must free this using VirtualFree. Exits the program if allocation fails.
+ */
+PCHAR allocVirtualMem(PCHAR tmpBuff){
     DWORD sizeOfImage = getSizeOfImage(tmpBuff);
+    
     PCHAR pImageBase = (PCHAR)VirtualAlloc(
         NULL,
         sizeOfImage,
@@ -36,12 +57,7 @@ int main(int argc, char* argv[]) {
     
     cout << "[+] Allocated virtual memory for the image at: 0x" << hex << (uintptr_t)pImageBase << endl;
 
-    // TODO: Section Mapping and onwards will go here...
-
-    VirtualFree(pImageBase, 0, MEM_RELEASE);
-    HeapFree(GetProcessHeap(), 0, (LPVOID)tmpBuff);
-    
-    return 0;
+    return pImageBase;
 }
 
 /**
