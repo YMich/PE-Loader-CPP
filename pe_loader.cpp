@@ -2,6 +2,8 @@
 #include <iostream>
 #include <iomanip>
 
+#define IMAGE_REL_BASED_DIR64 10
+
 using namespace std;
 
 BOOL isValidDosHeader(PCHAR buff);
@@ -11,6 +13,7 @@ DWORD getSizeOfImage(PCHAR buff);
 PCHAR allocVirtualMem(PCHAR tmpBuff);
 void copyHeaders(PCHAR peBuff, PCHAR pImageBase);
 void copySections(PCHAR peBuff, PCHAR pImageBase);
+void fixAbsoluteAddresses(PCHAR peBuff, PCHAR pImageBase);
 
 int main(int argc, char* argv[]) {
     if (argc != 2){
@@ -29,11 +32,63 @@ int main(int argc, char* argv[]) {
 
     copyHeaders(tmpBuff, pImageBase);
     copySections(tmpBuff, pImageBase);
+    
+    HeapFree(GetProcessHeap(), 0, (LPVOID)tmpBuff);
+    cout << "[+] Freed temporary raw file buffer." << endl;
+
+    fixAbsoluteAddresses(pImageBase);
 
     VirtualFree(pImageBase, 0, MEM_RELEASE);
     HeapFree(GetProcessHeap(), 0, (LPVOID)tmpBuff);
     
     return 0;
+}
+
+/**
+ * @brief Applies Base Relocations to the mapped image if it was loaded at a different ImageBase.
+ * @param pImageBase Pointer to the allocated and mapped virtual memory.
+ */
+void fixAbsoluteAddresses(PCHAR pImageBase){
+    PIMAGE_DOS_HEADER pDosHeader = (PIMAGE_DOS_HEADER)pImageBase;
+    PIMAGE_NT_HEADERS pNtHeaders = (PIMAGE_NT_HEADERS)(pImageBase + pDosHeader->e_lfanew);
+
+    DWORD sizeRelocationDir = pNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size;
+    DWORD rvaRelocationDir = pNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress;
+
+    if (sizeRelocationDir == 0) {
+        cout << "[*] No relocations found or needed." << endl;
+        return;
+    }
+
+    ULONG_PTR delta = (ULONG_PTR)pImageBase - pNtHeaders->OptionalHeader.ImageBase;
+
+    if (delta == 0) {
+        cout << "[+] Image loaded at preferred base address. No relocations required." << endl;
+        return;
+    }
+
+    DWORD currRealocBlock = 0;
+    while (currRealocBlock < sizeRelocationDir){
+
+        PIMAGE_BASE_RELOCATION relocBlock = (PIMAGE_BASE_RELOCATION)(pImageBase + rvaRelocationDir + currRealocBlock);
+        DWORD countEntry = (relocBlock->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD);
+        PWORD entries = (PWORD)(relocBlock + 1);
+
+        for (DWORD i = 0; i < countEntry; i++){
+            BYTE type = entries[i] >> 12;
+            WORD offset = entries[i] & 0x0FFF;
+
+            if (type == IMAGE_REL_BASED_DIR64){
+                PDWORD64 pAddressToFix = (PDWORD64)(pImageBase + relocBlock->VirtualAddress + offset);
+                
+                *pAddressToFix += delta;
+            }
+        }
+
+        currRealocBlock += relocBlock->SizeOfBlock;
+    }
+    
+    cout << "[+] Fixed absolute addresses successfully (Applied " << sizeRelocationDir << " bytes of relocations)" << endl;
 }
 
 /**
