@@ -9,6 +9,8 @@ BOOL isValidNtHeader(PCHAR buff);
 PCHAR getFile(char* argv[]);
 DWORD getSizeOfImage(PCHAR buff); 
 PCHAR allocVirtualMem(PCHAR tmpBuff);
+void copyHeaders(PCHAR peBuff, PCHAR pImageBase);
+void copySections(PCHAR peBuff, PCHAR pImageBase);
 
 int main(int argc, char* argv[]) {
     if (argc != 2){
@@ -25,12 +27,61 @@ int main(int argc, char* argv[]) {
 
     PCHAR pImageBase = allocVirtualMem(tmpBuff);
 
-    // TODO: Section Mapping
+    copyHeaders(tmpBuff, pImageBase);
+    copySections(tmpBuff, pImageBase);
 
     VirtualFree(pImageBase, 0, MEM_RELEASE);
     HeapFree(GetProcessHeap(), 0, (LPVOID)tmpBuff);
     
     return 0;
+}
+
+/**
+ * @brief Copies the PE headers (DOS, NT, and Section Table) to the allocated virtual memory.
+ * @param peBuff Pointer to the raw PE file data.
+ * @param pImageBase Pointer to the allocated virtual memory.
+ */
+void copyHeaders(PCHAR peBuff, PCHAR pImageBase){
+    PIMAGE_DOS_HEADER pDosHeader = (PIMAGE_DOS_HEADER)peBuff;
+    LONG e_lfanew = pDosHeader->e_lfanew;
+    PIMAGE_NT_HEADERS pNtHeaders = (PIMAGE_NT_HEADERS)(peBuff + e_lfanew);
+
+    DWORD sizeOfHeaders = pNtHeaders->OptionalHeader.SizeOfHeaders;
+    memcpy(pImageBase, peBuff, sizeOfHeaders);
+
+    cout << "[+] Copied headers (" << sizeOfHeaders << " bytes) to virtual memory" << endl;
+}
+
+/**
+ * @brief Maps each section from the raw file buffer to its correct VirtualAddress in memory.
+ * @param peBuff Pointer to the raw PE file data.
+ * @param pImageBase Pointer to the allocated virtual memory.
+ */
+void copySections(PCHAR peBuff, PCHAR pImageBase){
+    PIMAGE_DOS_HEADER pDosHeader = (PIMAGE_DOS_HEADER)peBuff;
+    LONG e_lfanew = pDosHeader->e_lfanew;
+    PIMAGE_NT_HEADERS pNtHeaders = (PIMAGE_NT_HEADERS)(peBuff + e_lfanew);
+
+    WORD numberOfSections = pNtHeaders->FileHeader.NumberOfSections;
+    PIMAGE_SECTION_HEADER pSectionHeader = IMAGE_FIRST_SECTION(pNtHeaders);
+    
+    for (int i = 0; i < numberOfSections; i++){
+        CHAR sSectionName[9] = {0};
+        memcpy(sSectionName, pSectionHeader[i].Name, 8);
+
+        if (pSectionHeader[i].SizeOfRawData > 0) {
+            memcpy(pImageBase + pSectionHeader[i].VirtualAddress, 
+                   peBuff + pSectionHeader[i].PointerToRawData, 
+                   pSectionHeader[i].SizeOfRawData);
+
+            cout << "[+] Section: " << left << setw(8) << sSectionName 
+                 << " copied to virtual address: 0x" 
+                 << right << hex << setfill('0') << setw(8) << (uintptr_t)(pImageBase + pSectionHeader[i].VirtualAddress) << endl;
+        } else {
+            cout << "[*] Section: " << left << setw(8) << sSectionName 
+                 << " has no raw data (skipped copying)" << endl;
+        }
+    }
 }
 
 /**
