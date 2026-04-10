@@ -1,6 +1,17 @@
+/**
+ * @file pe_loader.cpp
+ * @brief Reflective PE Loader (x64) with IAT Hooking.
+ *
+ * This program manually maps a 64-bit Windows Portable Executable (PE) into memory,
+ * applies base relocations, resolves the Import Address Table (IAT), and executes it.
+ * It bypasses the standard Windows OS loader (ntdll.dll), allowing for in-memory execution.
+ * Additionally, it hooks GetCommandLineA/W to spoof command-line arguments for the payload.
+ */
+
 #include <windows.h>
 #include <iostream>
 #include <iomanip>
+#include <string.h>
 
 #define IMAGE_REL_BASED_DIR64 10
 
@@ -16,13 +27,31 @@ void copySections(PCHAR peBuff, PCHAR pImageBase);
 void fixAbsoluteAddresses(PCHAR pImageBase);
 void resolveIAT(PCHAR pImageBase);
 void executeProc(PCHAR pImageBase);
+void initUserArgs(int argc, char* argv[]);
+LPSTR MyGetCommandLineA();
+LPWSTR MyGetCommandLineW();
 
+/** @brief Global buffer holding the spoofed ANSI command line string. */
+PCHAR userArgsA;
+/** @brief Global buffer holding the spoofed Unicode command line string. */
+PWCHAR userArgsW;
+
+/**
+ * @brief The main entry point for the PE Loader.
+ * Orchestrates the entire loading pipeline: file reading, memory allocation,
+ * section mapping, relocation, IAT resolution, and payload execution.
+ * @param argc Argument count.
+ * @param argv Argument vector. argv[1] must be the path to the target payload.
+ * @return int Exit status (0 on success).
+ */
 int main(int argc, char* argv[]) {
-    if (argc != 2){
+    if (argc <= 1){
         cout << "Wrong number of arguments! Command form: .\\pe_loader.exe <FilePath>" << endl;
         exit(1);
     }
 
+    initUserArgs(argc, argv);
+    
     // Allocation of virtual memory
     cout << "=== PREPARATION ===" << endl;
     PCHAR tmpBuff = getFile(argv);
@@ -50,11 +79,73 @@ int main(int argc, char* argv[]) {
 }
 
 /**
+ * @brief Custom hook function for GetCommandLineA.
+ * Injected into the target's IAT to spoof the ANSI command line.
+ * @return LPSTR Pointer to the spoofed ANSI command line string.
+ */
+LPSTR WINAPI MyGetCommandLineA(){
+    return (LPSTR)userArgsA;
+}
+
+/**
+ * @brief Custom hook function for GetCommandLineW.
+ * Injected into the target's IAT to spoof the Unicode command line.
+ * @return LPWSTR Pointer to the spoofed Unicode command line string.
+ */
+LPWSTR WINAPI MyGetCommandLineW(){
+    return (LPWSTR)userArgsW;
+}
+
+/**
+ * @brief Initializes the global spoofed command-line buffers.
+ * Concatenates the loader's arguments (starting from the target payload name)
+ * into a single string to be served to the payload when it asks for the command line.
+ * @param argc Argument count passed to the loader.
+ * @param argv Argument vector passed to the loader.
+ */
+void initUserArgs(int argc, char* argv[]){
+    DWORD size = 0;
+    for (int i = 1; i < argc; i++){
+        size += strlen(argv[i]);
+    }
+
+    userArgsA = (PCHAR)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size + argc);
+    if (userArgsA == NULL){
+        cout << "[-] HeapAlloc failed!" << endl;
+        exit(1);
+    }
+
+    for (int i = 1; i < argc; i++) {
+        strcat(userArgsA, argv[i]);
+        strcat(userArgsA, " ");
+    }
+    userArgsA[strlen(userArgsA)] = 0;
+
+    userArgsW = (PWCHAR)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, 2*(size + argc));
+    if (userArgsW == NULL){
+        cout << "[-] HeapAlloc failed!" << endl;
+        exit(1);
+    }
+
+    int result = MultiByteToWideChar(
+        CP_ACP,
+        0,
+        userArgsA,
+        -1,
+        userArgsW,
+        MAX_PATH);
+    if (result == 0) {
+        cout << "Conversion failed\n";
+        exit(1);
+    }
+}
+
+/**
  * @brief Transfers execution control to the injected payload.
- * * @param pImageBase Pointer to the allocated and mapped virtual memory 
+ * @param pImageBase Pointer to the allocated and mapped virtual memory 
  * where the payload is fully prepared (sections mapped, 
  * relocations applied, and IAT resolved).
- * * @note This is the point of no return. Once the payload is executed, 
+ * @note This is the point of no return. Once the payload is executed, 
  * the execution flow belongs to the injected code. If the payload 
  * does not return (e.g., it runs an infinite loop or calls exit()), 
  * this loader will not resume execution.
@@ -76,6 +167,7 @@ void executeProc(PCHAR pImageBase){
 
 /**
  * @brief Resolves the Import Address Table (IAT) by loading required DLLs and finding function addresses.
+ * Integrates IAT Hooking logic to intercept calls to specific Windows APIs (e.g., GetCommandLine).
  * @param pImageBase Pointer to the allocated and mapped virtual memory.
  */
 void resolveIAT(PCHAR pImageBase){
@@ -127,7 +219,19 @@ void resolveIAT(PCHAR pImageBase){
                 // The function is imported by name
                 PIMAGE_IMPORT_BY_NAME ibn = (PIMAGE_IMPORT_BY_NAME)(pImageBase + ulValue);
                 LPCSTR lpProcName = ibn->Name;
-                procAddress = GetProcAddress(hModule, lpProcName);
+
+                // --- IAT HOOKING LOGIC ---
+                if (strcmp(lpProcName, "GetCommandLineA") == 0){
+                    procAddress = (FARPROC)MyGetCommandLineA;
+                    cout << "[*] -> HOOKED GetCommandLineA!" << endl;
+                }
+                else if (strcmp(lpProcName, "GetCommandLineW") == 0){
+                    procAddress = (FARPROC)MyGetCommandLineW;
+                    cout << "[*] -> HOOKED GetCommandLineW!" << endl;
+                }
+                else{
+                    procAddress = GetProcAddress(hModule, lpProcName);
+                }
             }
 
             importAddressArr[i].u1.Function = (ULONGLONG)procAddress;
