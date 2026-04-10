@@ -74,7 +74,9 @@ int main(int argc, char* argv[]) {
     executeProc(pImageBase);
 
     VirtualFree(pImageBase, 0, MEM_RELEASE);
-    
+    HeapFree(GetProcessHeap(), 0, (LPVOID)userArgsA);
+    HeapFree(GetProcessHeap(), 0, (LPVOID)userArgsW);
+
     return 0;
 }
 
