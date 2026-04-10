@@ -103,4 +103,3 @@ Hello from the injected payload!
 ## ⚠️ Disclaimer
 
 This project was developed strictly for **educational purposes** to understand the Windows Portable Executable format, memory management, and operating system internals. It should not be used for malicious purposes.
-```
