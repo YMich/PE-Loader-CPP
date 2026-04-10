@@ -15,6 +15,7 @@ void copyHeaders(PCHAR peBuff, PCHAR pImageBase);
 void copySections(PCHAR peBuff, PCHAR pImageBase);
 void fixAbsoluteAddresses(PCHAR pImageBase);
 void resolveIAT(PCHAR pImageBase);
+void executeProc(PCHAR pImageBase);
 
 int main(int argc, char* argv[]) {
     if (argc != 2){
@@ -22,6 +23,7 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
+    cout << "=== PREPARATION ===" << endl;
     PCHAR tmpBuff = getFile(argv);
 
     if (!isValidDosHeader(tmpBuff) || !isValidNtHeader(tmpBuff)){
@@ -35,14 +37,30 @@ int main(int argc, char* argv[]) {
     copySections(tmpBuff, pImageBase);
 
     HeapFree(GetProcessHeap(), 0, (LPVOID)tmpBuff);
-    cout << "[+] Freed temporary raw file buffer." << endl;
+    cout << endl << "[+] Freed temporary raw file buffer." << endl;
 
     fixAbsoluteAddresses(pImageBase);
     resolveIAT(pImageBase);
+    executeProc(pImageBase);
 
     VirtualFree(pImageBase, 0, MEM_RELEASE);
     
     return 0;
+}
+
+void executeProc(PCHAR pImageBase){
+    typedef void (*EntryPoint)();
+
+    PIMAGE_DOS_HEADER pDosHeader = (PIMAGE_DOS_HEADER)pImageBase;
+    PIMAGE_NT_HEADERS pNtHeaders = (PIMAGE_NT_HEADERS)(pImageBase + pDosHeader->e_lfanew);
+
+    PCHAR virtualAddressOfEntryPoint = (PCHAR)(pImageBase + pNtHeaders->OptionalHeader.AddressOfEntryPoint);
+    EntryPoint ep = (EntryPoint)virtualAddressOfEntryPoint;
+
+    cout << endl << "[!] Executing payload..." 
+         << endl << "[!] Payload output:" << endl;
+         
+    ep();
 }
 
 /**
@@ -53,6 +71,7 @@ void resolveIAT(PCHAR pImageBase){
     PIMAGE_DOS_HEADER pDosHeader = (PIMAGE_DOS_HEADER)pImageBase;
     PIMAGE_NT_HEADERS pNtHeaders = (PIMAGE_NT_HEADERS)(pImageBase + pDosHeader->e_lfanew);
 
+    cout << endl << "=== LOADING DLLs ===" << endl;
     DWORD rvaImportDir = pNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
     if (rvaImportDir == 0) {
         cout << "[*] No Import Table found." << endl;
@@ -122,6 +141,7 @@ void fixAbsoluteAddresses(PCHAR pImageBase){
     DWORD sizeRelocationDir = pNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size;
     DWORD rvaRelocationDir = pNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress;
 
+    cout << endl << "=== RELOCATIONS ===" << endl;
     if (sizeRelocationDir == 0) {
         cout << "[*] No relocations found or needed." << endl;
         return;
@@ -155,7 +175,7 @@ void fixAbsoluteAddresses(PCHAR pImageBase){
         currRealocBlock += relocBlock->SizeOfBlock;
     }
     
-    cout << "[+] Fixed absolute addresses successfully (Applied " << sizeRelocationDir << " bytes of relocations)" << endl;
+    cout <<"[+] Fixed absolute addresses successfully (Applied " << sizeRelocationDir << " bytes of relocations)" << endl;
 }
 
 /**
@@ -171,6 +191,7 @@ void copyHeaders(PCHAR peBuff, PCHAR pImageBase){
     DWORD sizeOfHeaders = pNtHeaders->OptionalHeader.SizeOfHeaders;
     memcpy(pImageBase, peBuff, sizeOfHeaders);
 
+    cout << endl << "=== HEADERS COPYING ===" << endl;
     cout << "[+] Copied headers (" << sizeOfHeaders << " bytes) to virtual memory" << endl;
 }
 
@@ -187,6 +208,7 @@ void copySections(PCHAR peBuff, PCHAR pImageBase){
     WORD numberOfSections = pNtHeaders->FileHeader.NumberOfSections;
     PIMAGE_SECTION_HEADER pSectionHeader = IMAGE_FIRST_SECTION(pNtHeaders);
     
+    cout << endl << "=== SECTIONS COPYING ===" << endl;
     for (int i = 0; i < numberOfSections; i++){
         CHAR sSectionName[9] = {0};
         memcpy(sSectionName, pSectionHeader[i].Name, 8);
