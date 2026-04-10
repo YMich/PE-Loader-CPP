@@ -13,7 +13,8 @@ DWORD getSizeOfImage(PCHAR buff);
 PCHAR allocVirtualMem(PCHAR tmpBuff);
 void copyHeaders(PCHAR peBuff, PCHAR pImageBase);
 void copySections(PCHAR peBuff, PCHAR pImageBase);
-void fixAbsoluteAddresses(PCHAR peBuff, PCHAR pImageBase);
+void fixAbsoluteAddresses(PCHAR pImageBase);
+void resolveIAT(PCHAR pImageBase);
 
 int main(int argc, char* argv[]) {
     if (argc != 2){
@@ -32,16 +33,82 @@ int main(int argc, char* argv[]) {
 
     copyHeaders(tmpBuff, pImageBase);
     copySections(tmpBuff, pImageBase);
-    
+
     HeapFree(GetProcessHeap(), 0, (LPVOID)tmpBuff);
     cout << "[+] Freed temporary raw file buffer." << endl;
 
     fixAbsoluteAddresses(pImageBase);
+    resolveIAT(pImageBase);
 
     VirtualFree(pImageBase, 0, MEM_RELEASE);
-    HeapFree(GetProcessHeap(), 0, (LPVOID)tmpBuff);
     
     return 0;
+}
+
+/**
+ * @brief Resolves the Import Address Table (IAT) by loading required DLLs and finding function addresses.
+ * @param pImageBase Pointer to the allocated and mapped virtual memory.
+ */
+void resolveIAT(PCHAR pImageBase){
+    PIMAGE_DOS_HEADER pDosHeader = (PIMAGE_DOS_HEADER)pImageBase;
+    PIMAGE_NT_HEADERS pNtHeaders = (PIMAGE_NT_HEADERS)(pImageBase + pDosHeader->e_lfanew);
+
+    DWORD rvaImportDir = pNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+    if (rvaImportDir == 0) {
+        cout << "[*] No Import Table found." << endl;
+        return;
+    }
+
+    PIMAGE_IMPORT_DESCRIPTOR pDllEntry = (PIMAGE_IMPORT_DESCRIPTOR)(pImageBase + rvaImportDir);
+
+    // Loop over each DLL
+    while (pDllEntry->Name != 0){
+        LPCSTR lpLibFileName = (LPCSTR)(pImageBase + pDllEntry->Name);
+        HMODULE hModule = LoadLibraryA(lpLibFileName);
+        
+        cout << "[*] Loading DLL: " << lpLibFileName << endl;
+
+        DWORD rvaOriginalFirstThunk = pDllEntry->OriginalFirstThunk;
+        DWORD rvaFirstThunk  = pDllEntry->FirstThunk;
+
+        // If the original table was stripped by the compiler (Bound Imports), use the second one.
+        if (rvaOriginalFirstThunk == 0) {
+            rvaOriginalFirstThunk = rvaFirstThunk;
+        }
+
+        PIMAGE_THUNK_DATA64 pThunk = (PIMAGE_THUNK_DATA64)(pImageBase + rvaOriginalFirstThunk);
+        PIMAGE_THUNK_DATA64 importAddressArr = (PIMAGE_THUNK_DATA64)(pImageBase + rvaFirstThunk);
+        DWORD i = 0;
+
+        // Loop over every single imported function within the DLL
+        while (pThunk[i].u1.AddressOfData != 0){
+            FARPROC procAddress;
+
+            // 64-bit number that can represent two things: an ordinal or a pointer to a name.
+            ULONGLONG ulValue = pThunk[i].u1.AddressOfData;
+
+            // The function is imported by ordinal
+            if (ulValue & IMAGE_ORDINAL_FLAG64) {
+                WORD ordinal = (WORD)(ulValue & 0xFFFF);
+
+                procAddress = GetProcAddress(hModule, MAKEINTRESOURCEA(ordinal)); 
+            }
+            else {
+                // The function is imported by name
+                PIMAGE_IMPORT_BY_NAME ibn = (PIMAGE_IMPORT_BY_NAME)(pImageBase + ulValue);
+                LPCSTR lpProcName = ibn->Name;
+                procAddress = GetProcAddress(hModule, lpProcName);
+            }
+
+            importAddressArr[i].u1.Function = (ULONGLONG)procAddress;
+
+            i++;
+        }
+
+        pDllEntry++;
+    }
+    
+    cout << "[+] Import Address Table (IAT) resolved successfully." << endl;
 }
 
 /**
