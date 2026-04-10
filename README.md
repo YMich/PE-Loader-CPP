@@ -54,25 +54,25 @@ Below is an example of a successful run of ".\pe_loader.exe target.exe":
 [+] Copied headers (600 bytes) to virtual memory
 
 === SECTIONS COPYING ===
-[+] Section: .text    copied to virtual address: 0x1d459541000
-[+] Section: .data000 copied to virtual address: 0x1d459610000
-[+] Section: .rdata00 copied to virtual address: 0x1d459614000
-[+] Section: .pdata00 copied to virtual address: 0x1d459626000
-[+] Section: .xdata00 copied to virtual address: 0x1d459632000
-[*] Section: .bss0000 has no raw data (skipped copying)
-[+] Section: .idata00 copied to virtual address: 0x1d459643000
-[+] Section: .tls0000 copied to virtual address: 0x1d459645000
-[+] Section: .rsrc000 copied to virtual address: 0x1d459646000
-[+] Section: .reloc00 copied to virtual address: 0x1d459647000
-[+] Section: /4000000 copied to virtual address: 0x1d459649000
-[+] Section: /1900000 copied to virtual address: 0x1d45964a000
-[+] Section: /3100000 copied to virtual address: 0x1d459663000
-[+] Section: /4500000 copied to virtual address: 0x1d459668000
-[+] Section: /5700000 copied to virtual address: 0x1d459674000
-[+] Section: /7000000 copied to virtual address: 0x1d459676000
-[+] Section: /8100000 copied to virtual address: 0x1d459677000
-[+] Section: /9700000 copied to virtual address: 0x1d45967a000
-[+] Section: /1130000 copied to virtual address: 0x1d459688000
+[+] Section: .text    copied to virtual address: 0x20b35e51000
+[+] Section: .data    copied to virtual address: 0x20b35f20000
+[+] Section: .rdata   copied to virtual address: 0x20b35f24000
+[+] Section: .pdata   copied to virtual address: 0x20b35f36000
+[+] Section: .xdata   copied to virtual address: 0x20b35f42000
+[*] Section: .bss     has no raw data (skipped copying)
+[+] Section: .idata   copied to virtual address: 0x20b35f53000
+[+] Section: .tls     copied to virtual address: 0x20b35f55000
+[+] Section: .rsrc    copied to virtual address: 0x20b35f56000
+[+] Section: .reloc   copied to virtual address: 0x20b35f57000
+[+] Section: /4       copied to virtual address: 0x20b35f59000
+[+] Section: /19      copied to virtual address: 0x20b35f5a000
+[+] Section: /31      copied to virtual address: 0x20b35f73000
+[+] Section: /45      copied to virtual address: 0x20b35f78000
+[+] Section: /57      copied to virtual address: 0x20b35f84000
+[+] Section: /70      copied to virtual address: 0x20b35f86000
+[+] Section: /81      copied to virtual address: 0x20b35f87000
+[+] Section: /97      copied to virtual address: 0x20b35f8a000
+[+] Section: /113     copied to virtual address: 0x20b35f98000
 
 [+] Freed temporary raw file buffer.
 

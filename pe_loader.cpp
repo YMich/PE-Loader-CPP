@@ -255,7 +255,7 @@ void copySections(PCHAR peBuff, PCHAR pImageBase){
 
             cout << "[+] Section: " << left << setw(8) << sSectionName 
                  << " copied to virtual address: 0x" 
-                 << right << hex << setfill('0') << setw(8) << (uintptr_t)(pImageBase + pSectionHeader[i].VirtualAddress) << endl;
+                 << right << hex << setfill('0') << setw(8) << (uintptr_t)(pImageBase + pSectionHeader[i].VirtualAddress) << setfill(' ') << endl;
         } else {
             cout << "[*] Section: " << left << setw(8) << sSectionName 
                  << " has no raw data (skipped copying)" << endl;
