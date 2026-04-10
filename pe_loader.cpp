@@ -23,19 +23,20 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
+    // Allocation of virtual memory
     cout << "=== PREPARATION ===" << endl;
     PCHAR tmpBuff = getFile(argv);
-
     if (!isValidDosHeader(tmpBuff) || !isValidNtHeader(tmpBuff)){
         HeapFree(GetProcessHeap(), 0, (LPVOID)tmpBuff);
         exit(1);
     }
-
     PCHAR pImageBase = allocVirtualMem(tmpBuff);
 
+    // Copy PE headers and sections into the allocated memory
     copyHeaders(tmpBuff, pImageBase);
     copySections(tmpBuff, pImageBase);
 
+    // Free temporary buffer
     HeapFree(GetProcessHeap(), 0, (LPVOID)tmpBuff);
     cout << endl << "[+] Freed temporary raw file buffer." << endl;
 
@@ -48,6 +49,16 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
+/**
+ * @brief Transfers execution control to the injected payload.
+ * * @param pImageBase Pointer to the allocated and mapped virtual memory 
+ * where the payload is fully prepared (sections mapped, 
+ * relocations applied, and IAT resolved).
+ * * @note This is the point of no return. Once the payload is executed, 
+ * the execution flow belongs to the injected code. If the payload 
+ * does not return (e.g., it runs an infinite loop or calls exit()), 
+ * this loader will not resume execution.
+ */
 void executeProc(PCHAR pImageBase){
     typedef void (*EntryPoint)();
 
@@ -59,7 +70,7 @@ void executeProc(PCHAR pImageBase){
 
     cout << endl << "[!] Executing payload..." 
          << endl << "[!] Payload output:" << endl;
-         
+
     ep();
 }
 
@@ -131,6 +142,30 @@ void resolveIAT(PCHAR pImageBase){
 }
 
 /**
+ * ================================================================================
+ * EXPLANATION OF THE BASE RELOCATION DIRECTORY (.reloc)
+ * ================================================================================
+ * * When a PE file is loaded at an address different from its preferred ImageBase,
+ * all hardcoded, absolute memory addresses within the code become invalid. 
+ * The Base Relocation table provides the loader with a list of "pointers to fix".
+ * * To save space, the directory is not a flat list. It is divided into "Blocks".
+ * Each block groups together all the relocations needed for a specific 4KB page.
+ * * STRUCTURE OF A SINGLE BLOCK:
+ * * 1. THE HEADER (IMAGE_BASE_RELOCATION structure - 8 Bytes)
+ * - DWORD VirtualAddress : The base RVA of the 4KB page being patched.
+ * - DWORD SizeOfBlock    : The total size of this block (Header + Entries).
+ * * 2. THE ENTRIES (Array of WORDs - 2 Bytes each)
+ * Immediately following the 8-byte header is an array of 16-bit entries. 
+ * The number of entries is calculated as: (SizeOfBlock - 8) / sizeof(WORD).
+ * * Each 16-bit WORD entry is bitwise-split into two parts:
+ * [ TYPE (Top 4 bits) ] [ OFFSET (Bottom 12 bits) ]
+ * * - Type (BitShift >> 12) : Dictates the math used to fix the address.
+ * 10 (0xA) = IMAGE_REL_BASED_DIR64 (Add 64-bit Delta)
+ * 0 (0x0) = IMAGE_REL_BASED_ABSOLUTE (Padding, do nothing)
+ * * - Offset (Bitwise & 0x0FFF) : The exact position within the 4KB page.
+ * Target RVA to patch = Block.VirtualAddress + Offset.
+ * ================================================================================
+ *
  * @brief Applies Base Relocations to the mapped image if it was loaded at a different ImageBase.
  * @param pImageBase Pointer to the allocated and mapped virtual memory.
  */
